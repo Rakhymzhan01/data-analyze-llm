@@ -14,21 +14,29 @@ export class LLMService {
   async generatePythonCode(data: ProcessedData, question: string): Promise<string> {
     const dataContext = ExcelProcessor.optimizeDataForLLM(data);
     
+    // Generate DataFrame variable names for reference
+    const dataFrameNames = data.sheets.map(sheet => {
+      const varName = `df_${sheet.sheetName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_')}`;
+      return `Sheet "${sheet.sheetName}" -> Variable: ${varName}`;
+    }).join('\n');
+    
     const prompt = `You are a data analysis expert. Given the following dataset and user question, generate Python code using pandas to answer the question.
 
 Dataset Information:
 ${dataContext}
 
+Available DataFrames:
+${dataFrameNames}
+
 User Question: ${question}
 
 Requirements:
 1. Use pandas for data manipulation
-2. Assume the data is already loaded as pandas DataFrames
-3. For sheet named "Sheet1", use variable df_sheet1, for "Sheet2" use df_sheet2, etc.
-4. Generate clean, efficient code
-5. Include appropriate error handling
-6. End with a result variable that contains the answer
-7. Add comments explaining the analysis
+2. The DataFrames are already loaded with the variable names shown above
+3. Generate clean, efficient code
+4. Include appropriate error handling
+5. End with a result variable that contains the answer
+6. Add comments explaining the analysis
 
 Generate ONLY the Python code, no explanations, no markdown formatting:
 
