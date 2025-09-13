@@ -11,7 +11,24 @@ import { QueryRequest, QueryResponse } from './types';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5001;
+
+// Debug: log the port configuration
+console.log('🔧 Environment PORT:', process.env.PORT);
+console.log('🚀 Using port:', port);
+
+// CORS middleware for cross-origin requests from frontend
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
 
 // Middleware
 app.use(express.json());
@@ -96,10 +113,14 @@ app.post('/query', async (req, res) => {
     // Execute the generated code
     const result = await pythonExecutor.executeAnalysis(processedData, generatedCode);
 
+    // Get beautiful interpretation from LLM
+    const interpretation = await llmService.interpretResults(question, generatedCode, result);
+
     const response: QueryResponse = {
       question,
       generatedCode,
-      result
+      result,
+      interpretation
     };
 
     res.json(response);

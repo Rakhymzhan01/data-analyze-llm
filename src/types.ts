@@ -23,5 +23,6 @@ export interface QueryResponse {
   question: string;
   generatedCode: string;
   result: any;
+  interpretation?: string;
   error?: string;
 }
