@@ -64,7 +64,8 @@ else:
 
   private runPythonScript(scriptPath: string): Promise<any> {
     return new Promise((resolve, reject) => {
-      const python = spawn('./venv/bin/python', [scriptPath]);
+      const pythonCmd = process.env.NODE_ENV === 'production' ? 'python3' : './venv/bin/python';
+      const python = spawn(pythonCmd, [scriptPath]);
       let stdout = '';
       let stderr = '';
 
@@ -100,7 +101,8 @@ else:
 
   async validatePythonEnvironment(): Promise<boolean> {
     return new Promise((resolve) => {
-      const python = spawn('./venv/bin/python', ['-c', 'import pandas; import numpy; print("OK")']);
+      const pythonCmd = process.env.NODE_ENV === 'production' ? 'python3' : './venv/bin/python';
+      const python = spawn(pythonCmd, ['-c', 'import pandas; import numpy; print("OK")']);
       
       python.on('close', (code) => {
         resolve(code === 0);
