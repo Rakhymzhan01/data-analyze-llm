@@ -13,6 +13,9 @@ export class PythonExecutor {
 
   async executeAnalysis(data: ProcessedData, analysisCode: string): Promise<any> {
     const tempDir = path.join(process.cwd(), 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
     const scriptId = Date.now().toString();
     const scriptPath = path.join(tempDir, `analysis_${scriptId}.py`);
 
