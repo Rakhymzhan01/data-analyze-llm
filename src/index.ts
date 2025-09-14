@@ -108,19 +108,27 @@ app.post('/query', async (req, res) => {
       return res.status(400).json({ error: 'dataId and question are required' });
     }
 
+    console.log('🔍 Getting processed data for ID:', dataId);
     const processedData = await ExcelProcessor.getProcessedData(dataId);
     if (!processedData) {
       return res.status(404).json({ error: 'Data not found' });
     }
+    console.log('✅ Data found, rows:', processedData.sheets[0]?.rowCount);
 
     // Generate Python code using LLM
+    console.log('🤖 Generating Python code for question:', question);
     const generatedCode = await llmService.generatePythonCode(processedData, question);
+    console.log('✅ Generated code length:', generatedCode.length);
 
     // Execute the generated code
+    console.log('🐍 Executing Python analysis...');
     const result = await pythonExecutor.executeAnalysis(processedData, generatedCode);
+    console.log('✅ Python execution completed, result type:', typeof result);
 
     // Get beautiful interpretation from LLM
+    console.log('📝 Generating interpretation...');
     const interpretation = await llmService.interpretResults(question, generatedCode, result);
+    console.log('✅ Interpretation generated, length:', interpretation.length);
 
     const response: QueryResponse = {
       question,
