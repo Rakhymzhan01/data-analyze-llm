@@ -53,7 +53,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit to prevent memory issues
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['.xlsx', '.xls'];
     const ext = path.extname(file.originalname).toLowerCase();

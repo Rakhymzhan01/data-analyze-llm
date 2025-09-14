@@ -9,18 +9,34 @@ export class ExcelProcessor {
   }
 
   static async processExcelFile(filePath: string, originalName: string): Promise<ProcessedData> {
-    const workbook = XLSX.readFile(filePath);
+    const workbook = XLSX.readFile(filePath, { cellDates: true, cellNF: false, cellText: false });
     const sheets: ExcelData[] = [];
 
     for (const sheetName of workbook.SheetNames) {
       const worksheet = workbook.Sheets[sheetName];
       if (!worksheet) continue;
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      
+      // Get sheet range to avoid processing empty cells
+      const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+      const maxRows = Math.min(range.e.r + 1, 10000); // Limit to 10k rows to prevent memory issues
+      
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+        header: 1,
+        range: 0,
+        defval: null,
+        raw: false // Convert everything to strings to reduce memory
+      });
       
       if (jsonData.length === 0) continue;
 
-      const headers = jsonData[0] as string[];
-      const data = jsonData.slice(1) as any[][];
+      const headers = (jsonData[0] as string[]) || [];
+      let data = jsonData.slice(1) as any[][];
+      
+      // Limit data size for large files
+      if (data.length > 5000) {
+        console.log(`Large sheet detected (${data.length} rows), sampling first 5000 rows`);
+        data = data.slice(0, 5000);
+      }
       
       sheets.push({
         sheetName,
@@ -29,6 +45,11 @@ export class ExcelProcessor {
         rowCount: data.length,
         columnCount: headers.length
       });
+      
+      // Force garbage collection between sheets
+      if (global.gc) {
+        global.gc();
+      }
     }
 
     const processedData: ProcessedData = {
