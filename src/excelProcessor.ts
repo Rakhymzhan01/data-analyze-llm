@@ -18,7 +18,6 @@ export class ExcelProcessor {
       
       // Get sheet range to avoid processing empty cells
       const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-      const maxRows = Math.min(range.e.r + 1, 10000); // Limit to 10k rows to prevent memory issues
       
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
         header: 1,
@@ -32,11 +31,8 @@ export class ExcelProcessor {
       const headers = (jsonData[0] as string[]) || [];
       let data = jsonData.slice(1) as any[][];
       
-      // Limit data size for large files
-      if (data.length > 5000) {
-        console.log(`Large sheet detected (${data.length} rows), sampling first 5000 rows`);
-        data = data.slice(0, 5000);
-      }
+      // Allow all data since we increased memory limit
+      console.log(`Processing sheet with ${data.length} rows`);
       
       sheets.push({
         sheetName,
