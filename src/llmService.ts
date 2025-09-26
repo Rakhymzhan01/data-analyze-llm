@@ -33,10 +33,40 @@ User Question: ${question}
 Requirements:
 1. Use pandas for data manipulation
 2. The DataFrames are already loaded with the variable names shown above
-3. Generate clean, efficient code
-4. Include appropriate error handling
+3. Generate clean, efficient code with proper error handling
+4. ALWAYS check if columns exist before using them
 5. End with a result variable that contains the answer
 6. Add comments explaining the analysis
+7. CRITICAL: For large datasets, provide ONLY TOP-10 summary statistics, NO detailed data
+8. MANDATORY: Use .head(10), .describe(), .value_counts().head(10), .nunique() for manageable results
+9. FORBIDDEN: Never return full DataFrames, raw data, or lists with >50 items
+10. CRITICAL: Use df.columns.tolist() to see available columns first
+
+EXAMPLE SAFE CODE FOR INSIGHTS:
+try:
+    # First, always check what columns are available
+    available_columns = df.columns.tolist()
+    
+    # Generate specific insights, not just basic info
+    result = {
+        "summary": f"Dataset has {len(df)} rows and {len(df.columns)} columns",
+        "insights": []
+    }
+    
+    # Add concrete insights based on available columns
+    for col in available_columns[:5]:  # Analyze first 5 columns only
+        if df[col].dtype in ['object', 'string']:
+            top_values = df[col].value_counts().head(3).to_dict()
+            result["insights"].append(f"Column '{col}': Top values are {list(top_values.keys())}")
+        elif df[col].dtype in ['int64', 'float64']:
+            result["insights"].append(f"Column '{col}': Range {df[col].min():.2f} to {df[col].max():.2f}")
+    
+    # Add only specific findings, not raw data
+    result["total_records"] = len(df)
+    result["key_columns"] = available_columns[:10]  # Max 10 column names
+    
+except Exception as e:
+    result = {"error": f"Error analyzing dataset: {str(e)}"}
 
 Generate ONLY the Python code, no explanations, no markdown formatting:
 
@@ -72,55 +102,71 @@ IMPORTANT: Return ONLY executable Python code. Do NOT wrap in backtick code bloc
   async generateDataFrameCreationCode(data: ProcessedData): Promise<string> {
     let code = "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\nimport pickle\nimport base64\n\n";
     
+    console.log('📊 Generating DataFrame code for single file...');
+    console.log(`File: ${data.originalName} (${data.sheets.length} sheets)`);
+    
     for (const sheet of data.sheets) {
+      console.log(`Processing sheet: ${sheet.sheetName} (${sheet.rowCount} rows)`);
       const sheetVarName = `df_${sheet.sheetName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_')}`;
       
-      code += `# Create DataFrame for sheet: ${sheet.sheetName}\n`;
-      
-      // Create the data structure column by column to avoid JSON issues
-      code += `${sheetVarName}_data = {}\n`;
-      
-      for (let i = 0; i < sheet.headers.length; i++) {
-        const header = sheet.headers[i];
-        const columnData = sheet.data.map(row => {
-          const value = row[i];
-          if (value === null || value === undefined || value === '') return null;
-          return value;
-        });
-        
-        // Create Python list with proper escaping
-        const pythonList = '[' + columnData.map((val: any) => {
-          if (val === null) return 'None';
-          if (typeof val === 'string') {
-            // Handle multiline strings and special characters properly
-            const escapedVal = val
-              .replace(/\\/g, '\\\\')    // Escape backslashes
-              .replace(/'/g, "\\'")      // Escape single quotes
-              .replace(/"/g, '\\"')      // Escape double quotes
-              .replace(/\n/g, '\\n')     // Escape newlines
-              .replace(/\r/g, '\\r')     // Escape carriage returns
-              .replace(/\t/g, '\\t');    // Escape tabs
-            return `'${escapedVal}'`;
-          }
-          if (typeof val === 'number') return val.toString();
-          if (typeof val === 'boolean') return val ? 'True' : 'False';
-          // Convert everything else to string and escape it
-          const escapedStr = String(val)
-            .replace(/\\/g, '\\\\')
-            .replace(/'/g, "\\'")
-            .replace(/"/g, '\\"')
-            .replace(/\n/g, '\\n')
-            .replace(/\r/g, '\\r')
-            .replace(/\t/g, '\\t');
-          return `'${escapedStr}'`;
-        }).join(', ') + ']';
-        
-        const escapedHeader = header.replace(/'/g, "\\'");
-        code += `${sheetVarName}_data['${escapedHeader}'] = ${pythonList}\n`;
+      // Use chunked processing for large files to prevent memory issues
+      if (sheet.rowCount > 5000) {
+        console.log(`⚠️ Large sheet detected (${sheet.rowCount} rows), using chunked approach for single file`);
+        code += this.generateChunkedDataFrameCode(sheet, sheetVarName);
+      } else {
+        code += this.generateOriginalDataFrameCode(sheet, sheetVarName);
       }
-      
-      code += `${sheetVarName} = pd.DataFrame(${sheetVarName}_data)\n\n`;
     }
+    
+    return code;
+  }
+
+  private generateOriginalDataFrameCode(sheet: any, varName: string): string {
+    let code = `# Create DataFrame for sheet: ${sheet.sheetName}\n`;
+    
+    // Create the data structure column by column to avoid JSON issues
+    code += `${varName}_data = {}\n`;
+    
+    for (let i = 0; i < sheet.headers.length; i++) {
+      const header = sheet.headers[i];
+      const columnData = sheet.data.map((row: any) => {
+        const value = row[i];
+        if (value === null || value === undefined || value === '') return null;
+        return value;
+      });
+      
+      // Create Python list with proper escaping
+      const pythonList = '[' + columnData.map((val: any) => {
+        if (val === null) return 'None';
+        if (typeof val === 'string') {
+          // Handle multiline strings and special characters properly
+          const escapedVal = val
+            .replace(/\\/g, '\\\\')    // Escape backslashes
+            .replace(/'/g, "\\'")      // Escape single quotes
+            .replace(/"/g, '\\"')      // Escape double quotes
+            .replace(/\n/g, '\\n')     // Escape newlines
+            .replace(/\r/g, '\\r')     // Escape carriage returns
+            .replace(/\t/g, '\\t');    // Escape tabs
+          return `'${escapedVal}'`;
+        }
+        if (typeof val === 'number') return val.toString();
+        if (typeof val === 'boolean') return val ? 'True' : 'False';
+        // Convert everything else to string and escape it
+        const escapedStr = String(val)
+          .replace(/\\/g, '\\\\')
+          .replace(/'/g, "\\'")
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t');
+        return `'${escapedStr}'`;
+      }).join(', ') + ']';
+      
+      const escapedHeader = header.replace(/'/g, "\\'");
+      code += `${varName}_data['${escapedHeader}'] = ${pythonList}\n`;
+    }
+    
+    code += `${varName} = pd.DataFrame(${varName}_data)\n\n`;
     
     return code;
   }
@@ -158,10 +204,29 @@ Requirements:
 1. Use pandas for data manipulation and comparison
 2. The DataFrames are already loaded with the variable names shown above
 3. Generate clean, efficient code for comparing the two datasets
-4. Include appropriate error handling
+4. Include appropriate error handling with try/except blocks
 5. End with a result variable that contains the comparison answer
 6. Add comments explaining the comparison logic
 7. Common comparisons: differences, similarities, trends, changes over time, statistical comparisons
+8. IMPORTANT: Do not assume variables exist - always check before using them
+9. Use basic pandas operations like .shape, .columns, .dtypes, .describe()
+
+EXAMPLE STRUCTURE:
+try:
+    # Get basic info about DataFrames
+    df1_info = {"shape": df1.shape, "columns": list(df1.columns)}
+    df2_info = {"shape": df2.shape, "columns": list(df2.columns)}
+    
+    # Your analysis here
+    
+    result = {
+        "comparison_type": "basic_comparison",
+        "file1_info": df1_info,
+        "file2_info": df2_info,
+        "summary": "Your analysis summary here"
+    }
+except Exception as e:
+    result = {"error": str(e), "type": "analysis_error"}
 
 Generate ONLY the Python code, no explanations, no markdown formatting:
 
@@ -195,21 +260,120 @@ IMPORTANT: Return ONLY executable Python code. Do NOT wrap in backtick code bloc
   }
 
   async generateComparisonDataFrameCreationCode(data1: ProcessedData, data2: ProcessedData): Promise<string> {
-    let code = "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\nimport pickle\nimport base64\n\n";
+    let code = "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\nimport pickle\nimport base64\nimport json\n\n";
+    
+    console.log('📊 Generating DataFrame code for comparison...');
+    console.log(`File 1: ${data1.originalName} (${data1.sheets.length} sheets)`);
+    console.log(`File 2: ${data2.originalName} (${data2.sheets.length} sheets)`);
     
     // Create DataFrames for first file with df1_ prefix
     code += `# DataFrames for File 1: ${data1.originalName}\n`;
     for (const sheet of data1.sheets) {
+      console.log(`Processing sheet 1: ${sheet.sheetName} (${sheet.rowCount} rows)`);
       const sheetVarName = `df1_${sheet.sheetName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_')}`;
-      code += this.generateSingleDataFrameCode(sheet, sheetVarName);
+      
+      // For large datasets, use chunked approach
+      if (sheet.rowCount > 5000) {
+        console.log(`⚠️ Large sheet detected (${sheet.rowCount} rows), using chunked approach`);
+        code += this.generateChunkedDataFrameCode(sheet, sheetVarName);
+      } else {
+        code += this.generateSingleDataFrameCode(sheet, sheetVarName);
+      }
     }
     
     // Create DataFrames for second file with df2_ prefix
     code += `\n# DataFrames for File 2: ${data2.originalName}\n`;
     for (const sheet of data2.sheets) {
+      console.log(`Processing sheet 2: ${sheet.sheetName} (${sheet.rowCount} rows)`);
       const sheetVarName = `df2_${sheet.sheetName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_')}`;
-      code += this.generateSingleDataFrameCode(sheet, sheetVarName);
+      
+      // For large datasets, use chunked approach
+      if (sheet.rowCount > 5000) {
+        console.log(`⚠️ Large sheet detected (${sheet.rowCount} rows), using chunked approach`);
+        code += this.generateChunkedDataFrameCode(sheet, sheetVarName);
+      } else {
+        code += this.generateSingleDataFrameCode(sheet, sheetVarName);
+      }
     }
+    
+    return code;
+  }
+
+  private generateChunkedDataFrameCode(sheet: any, varName: string): string {
+    const chunkSize = 3000; // Process 3000 rows at a time
+    const totalRows = sheet.rowCount;
+    const numChunks = Math.ceil(totalRows / chunkSize);
+    
+    let code = `# Create chunked DataFrame for large sheet: ${sheet.sheetName} (${totalRows} rows in ${numChunks} chunks)\n`;
+    
+    // Create list to store chunk DataFrames
+    code += `${varName}_chunks = []\n`;
+    
+    // Generate chunks
+    for (let chunkIndex = 0; chunkIndex < numChunks; chunkIndex++) {
+      const startRow = chunkIndex * chunkSize;
+      const endRow = Math.min(startRow + chunkSize, totalRows);
+      const chunkData = sheet.data.slice(startRow, endRow);
+      
+      code += `\n# Chunk ${chunkIndex + 1}/${numChunks}: rows ${startRow + 1}-${endRow}\n`;
+      code += `${varName}_chunk${chunkIndex}_data = {}\n`;
+      
+      // Process each column for this chunk
+      for (let i = 0; i < sheet.headers.length; i++) {
+        const header = sheet.headers[i];
+        const columnData = chunkData.map((row: any) => {
+          const value = row[i];
+          if (value === null || value === undefined || value === '') return null;
+          return value;
+        });
+        
+        // Create Python list with proper escaping
+        const pythonList = '[' + columnData.map((val: any) => {
+          if (val === null) return 'None';
+          if (typeof val === 'string') {
+            const escapedVal = val
+              .replace(/\\/g, '\\\\')
+              .replace(/'/g, "\\'")
+              .replace(/"/g, '\\"')
+              .replace(/\n/g, '\\n')
+              .replace(/\r/g, '\\r')
+              .replace(/\t/g, '\\t');
+            return `'${escapedVal}'`;
+          }
+          if (typeof val === 'number') return val.toString();
+          if (typeof val === 'boolean') return val ? 'True' : 'False';
+          const escapedStr = String(val)
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/"/g, '\\"')
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t');
+          return `'${escapedStr}'`;
+        }).join(', ') + ']';
+        
+        const escapedHeader = header.replace(/'/g, "\\'");
+        code += `${varName}_chunk${chunkIndex}_data['${escapedHeader}'] = ${pythonList}\n`;
+      }
+      
+      code += `${varName}_chunk${chunkIndex} = pd.DataFrame(${varName}_chunk${chunkIndex}_data)\n`;
+      code += `${varName}_chunks.append(${varName}_chunk${chunkIndex})\n`;
+    }
+    
+    // Combine all chunks into single DataFrame
+    code += `\n# Combine all chunks into single DataFrame\n`;
+    code += `${varName} = pd.concat(${varName}_chunks, ignore_index=True)\n`;
+    
+    // Add metadata and verify DataFrame integrity
+    code += `${varName}.attrs['total_rows'] = ${totalRows}\n`;
+    code += `${varName}.attrs['processed_in_chunks'] = True\n`;
+    code += `${varName}.attrs['chunk_info'] = 'Processed in ${numChunks} chunks of ${chunkSize} rows each'\n`;
+    
+    // Debug information
+    code += `print("✅ DataFrame ${varName} created successfully:")\n`;
+    code += `print(f"   Shape: {${varName}.shape}")\n`;
+    code += `print(f"   Columns: {list(${varName}.columns)}")\n`;
+    code += `print(f"   Memory usage: {${varName}.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")\n\n`;
     
     return code;
   }
@@ -259,7 +423,13 @@ IMPORTANT: Return ONLY executable Python code. Do NOT wrap in backtick code bloc
       code += `${varName}_data['${escapedHeader}'] = ${pythonList}\n`;
     }
     
-    code += `${varName} = pd.DataFrame(${varName}_data)\n\n`;
+    code += `${varName} = pd.DataFrame(${varName}_data)\n`;
+    
+    // Debug information
+    code += `print("✅ DataFrame ${varName} created successfully:")\n`;
+    code += `print(f"   Shape: {${varName}.shape}")\n`;
+    code += `print(f"   Columns: {list(${varName}.columns)}")\n\n`;
+    
     return code;
   }
 
@@ -330,14 +500,15 @@ ${JSON.stringify(executionResult, null, 2)}
 ${JSON.stringify(executionResult, null, 2)}
 
 ВАЖНО:
-1. Отвечай КОНКРЕТНО на вопрос пользователя
-2. Если спрашивают "найди тендеры" - покажи список названий тендеров
-3. Если спрашивают про количество - покажи числа
-4. Если спрашивают про компании - покажи список компаний
-5. Используй эмодзи для красоты: 📊 💼 🔍 📈 ⚡ 🏢
-6. Структурируй ответ списками и заголовками
-7. НЕ показывай технический JSON - преобразуй в читаемый вид
-8. Если данных много - показывай ТОП-5 или ТОП-10
+1. Отвечай КОНКРЕТНО на вопрос пользователя с КОНКРЕТНЫМИ данными
+2. Если спрашивают "найди тендеры" - покажи НАЗВАНИЯ тендеров из данных
+3. Если спрашивают про количество - покажи ТОЧНЫЕ числа
+4. Если спрашивают про компании - покажи КОНКРЕТНЫЕ названия компаний
+5. НИКОГДА не давай общие рекомендации типа "уточните параметры"
+6. ВСЕГДА показывай РЕАЛЬНЫЕ данные из файла, даже если их много
+7. Используй эмодзи для красоты: 📊 💼 🔍 📈 ⚡ 🏢
+8. НЕ показывай технический JSON - преобразуй в читаемый вид
+9. Показывай ТОП-10 конкретных результатов, НЕ советы
 
 Формат ответа:
 [эмодзи] Краткий ответ на вопрос

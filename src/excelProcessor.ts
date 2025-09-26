@@ -31,8 +31,18 @@ export class ExcelProcessor {
       const headers = (jsonData[0] as string[]) || [];
       let data = jsonData.slice(1) as any[][];
       
-      // Allow all data since we increased memory limit
-      console.log(`Processing sheet with ${data.length} rows`);
+      // Validate headers
+      const validHeaders = headers.filter(h => h !== null && h !== undefined && h !== '');
+      console.log(`Processing sheet with ${data.length} rows, ${headers.length} total columns, ${validHeaders.length} valid headers`);
+      
+      // Debug: show first few headers
+      console.log(`Headers sample:`, headers.slice(0, 5));
+      
+      // If no valid headers, skip this sheet
+      if (validHeaders.length === 0) {
+        console.warn(`⚠️ Skipping sheet ${sheetName} - no valid headers found`);
+        continue;
+      }
       
       sheets.push({
         sheetName,
