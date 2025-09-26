@@ -11,6 +11,57 @@ export class PythonExecutor {
     this.llmService = new LLMService();
   }
 
+  async executeComparison(data1: ProcessedData, data2: ProcessedData, comparisonCode: string): Promise<any> {
+    const tempDir = path.join(process.cwd(), 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    const scriptId = Date.now().toString();
+    const scriptPath = path.join(tempDir, `comparison_${scriptId}.py`);
+
+    try {
+      // Generate DataFrame creation code for both files
+      const dataFrameCode = await this.llmService.generateComparisonDataFrameCreationCode(data1, data2);
+      
+      // Combine DataFrame creation with comparison code
+      const fullCode = `
+${dataFrameCode}
+
+# Comparison analysis code
+${comparisonCode}
+
+# Output result
+import json
+if 'result' in locals():
+    if hasattr(result, 'to_dict'):
+        print(json.dumps(result.to_dict()))
+    elif hasattr(result, 'tolist'):
+        print(json.dumps(result.tolist()))
+    else:
+        print(json.dumps(str(result)))
+else:
+    print(json.dumps("No result variable found"))
+`;
+
+      // Write the Python script
+      fs.writeFileSync(scriptPath, fullCode);
+
+      // Execute the Python script
+      const result = await this.runPythonScript(scriptPath);
+      
+      // Clean up
+      fs.unlinkSync(scriptPath);
+      
+      return result;
+    } catch (error) {
+      // Clean up on error
+      if (fs.existsSync(scriptPath)) {
+        fs.unlinkSync(scriptPath);
+      }
+      throw error;
+    }
+  }
+
   async executeAnalysis(data: ProcessedData, analysisCode: string): Promise<any> {
     const tempDir = path.join(process.cwd(), 'temp');
     if (!fs.existsSync(tempDir)) {

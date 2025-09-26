@@ -19,6 +19,17 @@ export interface QueryRequest {
   question: string;
 }
 
+export interface ComparisonRequest {
+  dataId1: string;
+  dataId2: string;
+  question: string;
+}
+
+export interface ComparisonData {
+  file1: ProcessedData;
+  file2: ProcessedData;
+}
+
 export interface QueryResponse {
   question: string;
   generatedCode: string;

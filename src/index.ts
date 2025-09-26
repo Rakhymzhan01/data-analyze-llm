@@ -6,7 +6,7 @@ import * as dotenv from 'dotenv';
 import { ExcelProcessor } from './excelProcessor';
 import { LLMService } from './llmService';
 import { PythonExecutor } from './pythonExecutor';
-import { QueryRequest, QueryResponse } from './types';
+import { QueryRequest, QueryResponse, ComparisonRequest } from './types';
 
 dotenv.config();
 
@@ -65,6 +65,21 @@ const upload = multer({
   }
 });
 
+// Configure multer for multiple file uploads (comparison)
+const uploadMultiple = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['.xlsx', '.xls'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only Excel files (.xlsx, .xls) are allowed'));
+    }
+  }
+});
+
 const llmService = new LLMService();
 const pythonExecutor = new PythonExecutor();
 
@@ -97,6 +112,47 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({ error: 'Failed to process Excel file' });
+  }
+});
+
+// New endpoint for uploading two files for comparison
+app.post('/upload-comparison', uploadMultiple.array('excelFiles', 2), async (req, res) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    
+    if (!files || files.length !== 2) {
+      return res.status(400).json({ error: 'Exactly two Excel files are required' });
+    }
+
+    const processedFiles = [];
+    
+    for (const file of files) {
+      const processedData = await ExcelProcessor.processExcelFile(
+        file.path,
+        file.originalname
+      );
+      processedFiles.push(processedData);
+      
+      // Clean up uploaded file
+      fs.unlinkSync(file.path);
+    }
+
+    res.json({
+      files: processedFiles.map(data => ({
+        id: data.id,
+        originalName: data.originalName,
+        summary: data.summary,
+        sheets: data.sheets.map(sheet => ({
+          name: sheet.sheetName,
+          rowCount: sheet.rowCount,
+          columnCount: sheet.columnCount,
+          headers: sheet.headers
+        }))
+      }))
+    });
+  } catch (error) {
+    console.error('Comparison upload error:', error);
+    res.status(500).json({ error: 'Failed to process Excel files for comparison' });
   }
 });
 
@@ -147,6 +203,60 @@ app.post('/query', async (req, res) => {
   }
 });
 
+// New endpoint for comparing two files
+app.post('/compare', async (req, res) => {
+  try {
+    const { dataId1, dataId2, question }: ComparisonRequest = req.body;
+
+    if (!dataId1 || !dataId2 || !question) {
+      return res.status(400).json({ error: 'dataId1, dataId2, and question are required' });
+    }
+
+    console.log('🔍 Getting processed data for comparison:', dataId1, dataId2);
+    
+    const [processedData1, processedData2] = await Promise.all([
+      ExcelProcessor.getProcessedData(dataId1),
+      ExcelProcessor.getProcessedData(dataId2)
+    ]);
+
+    if (!processedData1 || !processedData2) {
+      return res.status(404).json({ error: 'One or both files not found' });
+    }
+
+    console.log('✅ Both files found for comparison');
+
+    // Generate Python code for comparison using LLM
+    console.log('🤖 Generating Python code for comparison:', question);
+    const generatedCode = await llmService.generateComparisonCode(processedData1, processedData2, question);
+    console.log('✅ Generated comparison code length:', generatedCode.length);
+
+    // Execute the generated code
+    console.log('🐍 Executing Python comparison analysis...');
+    const result = await pythonExecutor.executeComparison(processedData1, processedData2, generatedCode);
+    console.log('✅ Python execution completed, result type:', typeof result);
+
+    // Get interpretation from LLM
+    console.log('📝 Generating comparison interpretation...');
+    const interpretation = await llmService.interpretComparisonResults(question, generatedCode, result, processedData1, processedData2);
+    console.log('✅ Interpretation generated, length:', interpretation.length);
+
+    const response: QueryResponse = {
+      question,
+      generatedCode,
+      result,
+      interpretation
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Comparison error:', error);
+    res.status(500).json({
+      error: 'Failed to process comparison',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 app.get('/data/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -190,7 +300,9 @@ app.get('/', (req, res) => {
     message: 'Excel Data Analysis API',
     endpoints: {
       'POST /upload': 'Upload Excel file for processing',
+      'POST /upload-comparison': 'Upload two Excel files for comparison',
       'POST /query': 'Ask questions about uploaded data',
+      'POST /compare': 'Compare two uploaded files',
       'GET /data/:id': 'Get processed data details',
       'GET /health': 'Check system health'
     }
